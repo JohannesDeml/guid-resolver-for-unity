@@ -24,16 +24,28 @@ function addGuidLabels() {
   }
 
   chrome.storage.local.get('guidMapping', function (data) {
-    if (data) {
-      console.log("Found guid mapping from " + JSON.stringify(data.guidMapping.creationDate));
-      guidLookup = data.guidMapping.mapping;
-    } else {
-      console.log('No guid mapping stored');
+    if (!data || !data.guidMapping || !data.guidMapping.mapping) {
+      console.log('No guid mapping stored, skipping guid labels');
+      return;
     }
+    guidLookup = data.guidMapping.mapping;
     guidLoaded = true;
     runGuidReplacerDelayed();
   });
 }
+
+// Drop the cached mapping when it changes (import or delete in the popup),
+// so the next scan does not use stale data. Re-label pages that already show labels.
+chrome.storage.onChanged.addListener(function (changes, areaName) {
+  if (areaName !== 'local' || !changes.guidMapping) {
+    return;
+  }
+  guidLoaded = false;
+  guidLookup = {};
+  if (document.querySelector('span.guidResolverTag')) {
+    addGuidLabels();
+  }
+});
 
 function runGuidReplacerDelayed() {
   // Call adding labels with a small delay to make sure everything is set up
