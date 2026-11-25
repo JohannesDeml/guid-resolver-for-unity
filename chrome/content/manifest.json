@@ -31,7 +31,7 @@
     "unlimitedStorage"
   ],
   "background": {
-    "scripts": ["scripts/background.js"]
+    "scripts": ["scripts/storage.js", "scripts/background.js"]
   },
   "content_scripts": [
     {

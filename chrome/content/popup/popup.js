@@ -82,54 +82,28 @@ function handleFileUpload(file) {
   const reader = new FileReader();
 
   reader.onload = function (e) {
+    var parsedData;
     try {
       statusText.innerText = 'Parsing JSON file ' + file.name + '...';
-      const parsedData = JSON.parse(e.target.result);
-
-      if (parsedData && parsedData.hasOwnProperty('mapping')) {
-        // Generate a unique ID for this file
-        const fileId = file.name + " - " + parsedData.creationDate;
-
-        // Store the individual file data
-        chrome.storage.local.get('guidFiles', function(data) {
-          const guidFiles = data.guidFiles || {};
-          guidFiles[fileId] = {
-            fileName: file.name,
-            creationDate: parsedData.creationDate,
-            uploadDate: new Date().toISOString(),
-            projectName: parsedData.projectName,
-            projectVersion: parsedData.projectVersion,
-            mapping: parsedData.mapping
-          };
-
-          chrome.storage.local.set({ 'guidFiles': guidFiles }, function() {
-            var error = chrome.runtime.lastError;
-            if (error) {
-               alert('JSON file upload error: ' + (error.message || JSON.stringify(error)));
-            }
-            generateMergedMapping(function() {
-              var error = chrome.runtime.lastError;
-              if (error) {
-                statusText.innerText = 'JSON file upload error: ' + (error.message || JSON.stringify(error));
-              } else {
-                statusText.innerText = 'JSON file uploaded successfully';
-                setTimeout(() => {
-                  uploadArea.classList.remove('loading');
-                  statusText.innerText = '';
-                }, 1000);
-              }
-              updateFileList();
-            });
-          });
-        });
-      } else {
-        statusText.innerText = 'JSON file must contain a "mapping" field in the root.';
-        uploadArea.classList.remove('loading');
-      }
+      parsedData = JSON.parse(e.target.result);
     } catch (error) {
       statusText.innerText = 'Error parsing JSON file: ' + error.message;
       uploadArea.classList.remove('loading');
+      return;
     }
+
+    GuidStorage.addFile(file.name, parsedData).then(function() {
+      statusText.innerText = 'JSON file uploaded successfully';
+      setTimeout(() => {
+        uploadArea.classList.remove('loading');
+        statusText.innerText = '';
+      }, 1000);
+      updateFileList();
+    }).catch(function(error) {
+      statusText.innerText = 'JSON file upload error: ' + (error.message || JSON.stringify(error));
+      uploadArea.classList.remove('loading');
+      updateFileList();
+    });
   };
 
   reader.onerror = function() {
@@ -140,48 +114,18 @@ function handleFileUpload(file) {
   reader.readAsText(file);
 }
 
-function generateMergedMapping(callback) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles) {
-      if (callback) callback();
-      return;
-    }
-
-    var mergedMapping = {};
-    var files = Object.entries(data.guidFiles);
-
-    // Sort files by creation date (newest first)
-    files.sort((a, b) => new Date(b[1].creationDate) - new Date(a[1].creationDate));
-
-    // Merge mappings, newer files overwrite older ones
-    files.forEach(([fileId, fileData]) => {
-      Object.assign(mergedMapping, fileData.mapping);
-    });
-
-    // Store the merged mapping
-    chrome.storage.local.set({ 'guidMapping': { mapping: mergedMapping } }, function() {
-      if (callback) callback();
-    });
-  });
-}
-
 function updateFileList() {
   var fileListDiv = document.getElementById('fileList');
   var totalEntriesDiv = document.getElementById('totalEntries');
 
-  chrome.storage.local.get(['guidFiles', 'guidMapping'], function(data) {
-    if (!data.guidFiles) {
+  Promise.all([GuidStorage.getFiles(), GuidStorage.getMergedCount()]).then(function([fileList, totalEntries]) {
+    if (fileList.length === 0) {
       fileListDiv.innerHTML = '<div class="file-item">No files uploaded</div>';
       totalEntriesDiv.textContent = 'Total entries: 0';
       return;
     }
 
-    var files = Object.entries(data.guidFiles);
-    // Sort files by creation date in descending order (newest first)
-    files.sort((a, b) => new Date(b[1].creationDate) - new Date(a[1].creationDate));
-
-    var totalEntries = data.guidMapping && data.guidMapping.mapping ?
-      Object.keys(data.guidMapping.mapping).length : 0;
+    var files = fileList.map(file => [file.id, file]);
 
     fileListDiv.innerHTML = files.map(([fileId, fileData]) => {
       return `
@@ -226,16 +170,7 @@ function updateFileList() {
 }
 
 function deleteFile(fileId) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles) return;
-
-    delete data.guidFiles[fileId];
-    chrome.storage.local.set({ 'guidFiles': data.guidFiles }, function() {
-      generateMergedMapping(function() {
-        updateFileList();
-      });
-    });
-  });
+  GuidStorage.removeFile(fileId).then(updateFileList);
 }
 
 function updateLabelsOnPage() {
@@ -246,18 +181,10 @@ function updateLabelsOnPage() {
 }
 
 function downloadFileData(fileId) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles || !data.guidFiles[fileId]) return;
+  GuidStorage.getFile(fileId).then(function(fileData) {
+    if (!fileData) return;
 
-    const fileData = data.guidFiles[fileId];
-    const jsonContent = JSON.stringify({
-      creationDate: fileData.creationDate,
-      projectName: fileData.projectName,
-      projectVersion: fileData.projectVersion,
-      mapping: fileData.mapping
-    }, null, 2);
-
-    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const blob = new Blob([GuidStorage.toJson(fileData)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement('a');
@@ -273,4 +200,3 @@ function downloadFileData(fileId) {
     }, 0);
   });
 }
-
