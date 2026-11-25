@@ -57,6 +57,27 @@ function runGuidReplacer() {
   var matchCount = 0;
   var nodeCount = 0;
 
+  // Create a label element. The asset name is drawn by CSS (::after with attr()),
+  // so it is never part of the page text: copying code does not copy the labels,
+  // and asset names are never parsed as HTML.
+  function createTag(guid) {
+    var entry = guidLookup[guid];
+    var tag = document.createElement('span');
+    tag.className = 'guidResolverTag';
+    tag.dataset.guid = guid;
+    if (entry && entry.fileName) {
+      tag.dataset.guidName = entry.fileName;
+    } else {
+      tag.classList.add('guidResolverTag--missing');
+      tag.dataset.guidName = 'unresolved';
+      tag.title = 'No loaded mapping contains this GUID';
+    }
+    matchCount++;
+    return tag;
+  }
+
+  var skipParents = { SCRIPT: true, STYLE: true, NOSCRIPT: true, TEXTAREA: true };
+
   // Collect all text nodes with possible GUID values (default)
   function traverseTextNodes(element) {
     var treeWalker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
@@ -71,12 +92,12 @@ function runGuidReplacer() {
         continue;
       }
 
-      // skip script nodes
-      if (node.parentNode.nodeName === "SCRIPT") {
+      // Skip script, style and editable text
+      if (!node.parentNode || skipParents[node.parentNode.nodeName]) {
         continue;
       }
 
-      textNodes.push(treeWalker.currentNode);
+      textNodes.push(node);
     }
 
     textNodes.forEach(function(node) {
@@ -84,24 +105,21 @@ function runGuidReplacer() {
     });
   }
 
-  // Function to process a text node and add labels to GUIDs
+  // Insert a label after each GUID in a text node by splitting the node.
+  // Works from the last match backwards, so earlier offsets stay valid.
   function processTextNode(node) {
-    var originalContent = node.nodeValue;
-    var modifiedContent = originalContent.replace(guidRegex, function (match) {
-      if (match === invalidGuid) {
-        return match;
+    var text = node.nodeValue;
+    var matches = [];
+    var match;
+    guidRegex.lastIndex = 0;
+    while ((match = guidRegex.exec(text)) !== null) {
+      if (match[0] !== invalidGuid) {
+        matches.push({ guid: match[0], end: match.index + match[0].length });
       }
-
-      var replacement = guidLookup[match];
-      var tagText = replacement ? replacement.fileName : "No matching GUID found";
-      matchCount++;
-      return match + '<span class="guidResolverTag">[' + tagText + ']</span>';
-    });
-    if (originalContent !== modifiedContent) {
-      node.nodeValue = '';
-      var span = document.createElement('span');
-      span.innerHTML = modifiedContent;
-      node.parentNode.replaceChild(span, node);
+    }
+    for (var i = matches.length - 1; i >= 0; i--) {
+      var rest = node.splitText(matches[i].end);
+      rest.parentNode.insertBefore(createTag(matches[i].guid), rest);
     }
     nodeCount++;
   }
@@ -143,10 +161,6 @@ function runGuidReplacer() {
           continue;
         }
 
-        var replacement = guidLookup[match];
-        var tagText = replacement ? replacement.fileName : "No matching GUID found";
-
-        matchCount++;
         var index = originalContent.indexOf(match, currentIndex);
         var upToMatch = originalContent.substring(currentIndex, index + match.length);
         var afterMatch = originalContent.substring(index + match.length);
@@ -155,10 +169,7 @@ function runGuidReplacer() {
         var upToMatchElement = element.cloneNode(true);
         upToMatchElement.setAttribute('data-code-text', upToMatch);
         element.parentNode.insertBefore(upToMatchElement, element);
-        var tagElement = document.createElement('span');
-        tagElement.innerHTML = '[' + tagText + ']';
-        tagElement.classList.add('guidResolverTag');
-        upToMatchElement.parentNode.insertBefore(tagElement, upToMatchElement.nextSibling);
+        upToMatchElement.parentNode.insertBefore(createTag(match), upToMatchElement.nextSibling);
         element.setAttribute('data-code-text', afterMatch);
       }
     }
@@ -168,11 +179,19 @@ function runGuidReplacer() {
   // measure time
   var startTime = performance.now();
 
-  // Remove all old labels
+  // Remove all old labels and merge the text nodes they split
   var elements = document.querySelectorAll('span.guidResolverTag');
+  var parents = [];
   for(var i = 0; i < elements.length; i++){
-    elements[i].parentNode.removeChild(elements[i]);
+    var parent = elements[i].parentNode;
+    parent.removeChild(elements[i]);
+    if (parents.indexOf(parent) === -1) {
+      parents.push(parent);
+    }
   }
+  parents.forEach(function(parent) {
+    parent.normalize();
+  });
 
   // Traverse all potential nodes in the document body
   traverseTextNodes(document.body);

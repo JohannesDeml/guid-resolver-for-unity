@@ -1,5 +1,38 @@
-.guidResolverTag {
-    background-color: #ffff00aa;
+/* GUID labels, drawn after each GUID found on the page.
+   The name comes from data-guid-name via ::after, so it is never copied with the code.
+   Every colour is declared twice: a plain light value for older browsers,
+   then light-dark(), which follows the page's color-scheme (Chrome 123+, Firefox 120+). */
+span.guidResolverTag {
+    display: inline;
+    margin-left: 0.4em;
+    padding: 0 0.35em;
+    border: 1px solid #bef264;
+    border-radius: 4px;
+    background-color: #ecfccb;
+    color: #365314;
+    border-color: light-dark(#bef264, rgba(200, 253, 70, 0.35));
+    background-color: light-dark(#ecfccb, rgba(200, 253, 70, 0.10));
+    color: light-dark(#365314, #d9f99d);
+    font: inherit;
     font-weight: normal;
-    color: #000;
+    font-style: normal;
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
+span.guidResolverTag::after {
+    content: attr(data-guid-name);
+}
+
+span.guidResolverTag.guidResolverTag--missing {
+    border-style: dashed;
+    border-color: #fb923c;
+    background-color: #fff7ed;
+    color: #9a3412;
+    border-color: light-dark(#fb923c, rgba(251, 146, 60, 0.55));
+    background-color: light-dark(#fff7ed, rgba(251, 146, 60, 0.10));
+    color: light-dark(#9a3412, #fdba74);
 }
