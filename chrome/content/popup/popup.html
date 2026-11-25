@@ -89,7 +89,38 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0"/><path d="M21 21l-6-6"/></svg>
           <span class="visually-hidden">GUID</span>
           <input class="search__input" id="lookupInput" type="text" placeholder="Paste a GUID" spellcheck="false" autocomplete="off">
+          <button class="icon-button icon-button--tiny" id="lookupClear" type="button" aria-label="Clear lookup" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg>
+          </button>
         </label>
+
+        <div class="result-card" id="lookupResult" hidden>
+          <div class="result-card__head">
+            <span class="chip" id="resultName"></span>
+            <button class="icon-button icon-button--tiny" id="resultCopy" type="button" aria-label="Copy asset name" title="Copy name">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667-2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1-2.667 2.667h-8.666a2.667 2.667 0 0 1-2.667-2.667z"/><path d="M4.012 16.737a2.005 2.005 0 0 1-1.012-1.737v-10c0-1.1.9-2 2-2h10c.75 0 1.158.385 1.5 1"/></svg>
+            </button>
+          </div>
+          <dl class="result-card__meta">
+            <dt>Mapping</dt><dd><span class="result-card__project" id="resultProject"></span> <span class="file-row__version" id="resultVersion"></span></dd>
+            <dt>File</dt><dd id="resultFile"></dd>
+            <dt>Created</dt><dd id="resultDate"></dd>
+          </dl>
+          <p class="result-card__also" id="resultAlso" hidden></p>
+        </div>
+
+        <div class="missing-card" id="lookupMissing" hidden>
+          <span class="missing-card__title">Not in any mapping</span>
+          <span class="missing-card__text" id="lookupMissingText"></span>
+        </div>
+
+        <div class="matches" id="lookupMatches" hidden>
+          <span class="lookup-hint" id="matchesCount"></span>
+          <div class="match-list" id="matchList" role="list"></div>
+          <span class="lookup-hint" id="matchesMore" hidden></span>
+        </div>
+
+        <p class="lookup-hint" id="lookupHint" hidden></p>
         <div class="empty-state" id="lookupEmpty">
           <span class="empty-state__icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0"/><path d="M21 21l-6-6"/></svg>
@@ -123,6 +154,7 @@
 
   <script src="../scripts/storage.js"></script>
   <script src="popup.js"></script>
+  <script src="lookup.js"></script>
 </body>
 
 </html>
