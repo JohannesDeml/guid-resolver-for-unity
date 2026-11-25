@@ -17,20 +17,26 @@ var guidLoaded = false;
 // Will be updated with stored guid mapping, if set in local storage
 var guidLookup = {};
 
-function addGuidLabels() {
+// Result of the last scan, reported to the popup: { resolved, unresolved, noMapping }
+var lastStats = null;
+
+// callback (optional) receives the stats once the scan is done
+function addGuidLabels(callback) {
   if(guidLoaded) {
-    runGuidReplacerDelayed();
+    runGuidReplacerDelayed(callback);
     return;
   }
 
   chrome.storage.local.get('guidMapping', function (data) {
     if (!data || !data.guidMapping || !data.guidMapping.mapping) {
       console.log('No guid mapping stored, skipping guid labels');
+      lastStats = { resolved: 0, unresolved: 0, noMapping: true };
+      if (callback) callback(lastStats);
       return;
     }
     guidLookup = data.guidMapping.mapping;
     guidLoaded = true;
-    runGuidReplacerDelayed();
+    runGuidReplacerDelayed(callback);
   });
 }
 
@@ -47,15 +53,20 @@ chrome.storage.onChanged.addListener(function (changes, areaName) {
   }
 });
 
-function runGuidReplacerDelayed() {
+function runGuidReplacerDelayed(callback) {
   // Call adding labels with a small delay to make sure everything is set up
-  setTimeout(runGuidReplacer, 500);
+  setTimeout(function() {
+    runGuidReplacer();
+    if (callback) callback(lastStats);
+  }, 500);
 }
 
 function runGuidReplacer() {
   console.log("Running unity guid replacer");
   var matchCount = 0;
   var nodeCount = 0;
+  var resolvedCount = 0;
+  var unresolvedCount = 0;
 
   // Create a label element. The asset name is drawn by CSS (::after with attr()),
   // so it is never part of the page text: copying code does not copy the labels,
@@ -67,7 +78,9 @@ function runGuidReplacer() {
     tag.dataset.guid = guid;
     if (entry && entry.fileName) {
       tag.dataset.guidName = entry.fileName;
+      resolvedCount++;
     } else {
+      unresolvedCount++;
       tag.classList.add('guidResolverTag--missing');
       tag.dataset.guidName = 'unresolved';
       tag.title = 'No loaded mapping contains this GUID';
@@ -200,14 +213,24 @@ function runGuidReplacer() {
     traverseDataCodeTextElements(document.body);
   }
 
+  lastStats = { resolved: resolvedCount, unresolved: unresolvedCount, noMapping: false };
   console.log("Found " + matchCount + " matches" + " in " + nodeCount + " nodes (duration: " + (performance.now() - startTime) + " ms)");
 }
 
 // Add listener to run the script when the url is updated
+// Messages from the popup and background script
+// addGuidLabels: (re-)scan the page, answer with the label counts once done
+// getGuidStats: answer with the counts of the last scan (null if the page was never scanned)
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.message === "addGuidLabels") {
-    addGuidLabels();
-    sendResponse({message: "Labels added"});
+    addGuidLabels(function(stats) {
+      sendResponse({ message: "Labels added", stats: stats });
+    });
+    // keep the message channel open for the async response
+    return true;
+  }
+  if (request.message === "getGuidStats") {
+    sendResponse({ stats: lastStats });
   }
 });
 
