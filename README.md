@@ -18,6 +18,9 @@ This repo was created out of the need to have a better experience doing PR revie
 * Generate Json in Unity with a mapping of all guids to meta data such as the file name ([how-to](./unity/README.md))
 * Import the mapping to the browser extension
 * HTML dom will be traversed to find all GUIDs and are enriched with the meta data from the json
+* Labels follow the page's light or dark theme and are not copied along with the code
+* Hover a label to see which mapping it comes from and copy the asset name or GUID
+* Look up any GUID, or its first characters, in the popup's Lookup tab
 * Very helpful for code reviews and projects which heavily rely on ScriptableObjects
 
 ### Supported Browsers
@@ -41,24 +44,24 @@ This repo was created out of the need to have a better experience doing PR revie
    1. Install through OpenUpm: `openupm add com.jd.guidresolver`
    2. **OR** Add in the package manager: `https://github.com/JohannesDeml/guid-resolver-for-unity.git?path=/unity#1.2.0`
    3. **OR** Download the package from the [releases](https://github.com/JohannesDeml/guid-resolver-for-unity/releases/) and import it through `Assets > Import Package`
-2. Export the guids lookup file by running the menu item `Assets > Generate GUID Mapping`. The file will be exported to `UnityProjectFolderRoot/Builds/guid-mapping.json`
+2. Export the guids lookup file by running the menu item `Assets > Generate Full GUID Mapping`. The file will be exported to `UnityProjectFolderRoot/Builds/guid-mapping.json`
 
 ### Browser Setup from Stores
 
 1. Install the chrome extension from [Chrome WebStore](https://chromewebstore.google.com/detail/guid-resolver-for-unity/pninecjapjolgfabndjmdifemkggmieg) / [Firefox Add-Ons](https://addons.mozilla.org/en-US/firefox/addon/guid-resolver-for-unity/)
-2. Select the extension in your browser menu bar and click on select to choose a mapping file you want to use - Select the one that you generated in step 2.
-3. Reload your current page - If you can't see any mapping applied you can use the `Update Labels` button in the extension popup.
+2. Open the extension from your browser menu bar and click `browse` to choose the mapping file you generated in step 2 (or drop the file onto the drop area).
+3. Reload your current page - If you can't see any mapping applied you can use the `Re-scan` button in the extension popup.
 
 ### Chrome Setup from Source
 
 1. Download the chrome extension folder from the [releases](https://github.com/JohannesDeml/guid-resolver-for-unity/releases/) and unpack the zip or clone the project
 2. In Chrome, go to the extensions and enable the developer mode
 3. Select Load unpacked and point to the chrome folder you downloaded
-4. Select the extension in your browser menu bar and click on select to choose a mapping file you want to use - Select the one that you generated in step 2.
-5. Reload your current page - If you can't see any mapping applied you can use the `Update Labels` button in the extension popup.
+4. Open the extension from your browser menu bar and click `browse` to choose the mapping file you generated in step 2 (or drop the file onto the drop area).
+5. Reload your current page - If you can't see any mapping applied you can use the `Re-scan` button in the extension popup.
 
 ## Troubleshooting
-* For firefox you can't upload the json in the popup, click the cog in the top right of the popup to open it in a new tab. This tab won't close.
+* Firefox closes the popup while its file picker is open. Clicking `browse` in the popup therefore opens the extension in a tab, where you can pick the file (you can also use the open-in-tab button in the top right of the popup).
 * For firefox, the addon will ask for permission every time you open a webpage. You can right-click on the addon to allow the addon for all content of the currently open domain
 
 ## License
