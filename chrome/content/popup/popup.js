@@ -9,26 +9,88 @@ function count(n, word) {
   return numberFormat.format(n) + ' ' + word + (n === 1 ? '' : 's');
 }
 
-// Firefox closes the popup while its file picker is open, so picking files there needs the tab view
+// Firefox closes the popup while its file picker is open, so picking files there needs the separate window
 const isFirefox = chrome.runtime.getURL('').startsWith('moz-extension://');
-// Set once known: true when this page is open as a tab (options page) rather than as the popup
-let isTab = false;
+const POPUP_WIDTH = 360;
+const POPUP_HEIGHT = 560;
+// How this page is shown: 'popup' (toolbar popup), 'window' (popped out) or 'tab' (options page)
+let viewMode = 'popup';
 
-function openInTab() {
-  chrome.runtime.openOptionsPage();
-  if (!isTab) {
+// Pop the popup out into its own small window at the popup's position,
+// or focus that window if it is already open
+async function openPopoutWindow() {
+  const url = location.origin + location.pathname + '?view=window';
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+  const existing = windows.find(w => (w.tabs || []).some(t => t.url && t.url.startsWith(url)));
+  if (existing) {
+    await chrome.windows.update(existing.id, { focused: true });
+  } else {
+    const current = await chrome.windows.getCurrent();
+    let left = window.screenX;
+    let top = window.screenY;
+    // Chrome reports the popup's own screen position. Firefox does not (it gives the
+    // browser window's), so there, and whenever the position looks like the browser
+    // window's corner, use the top right of the browser window below the toolbar,
+    // where the extension button usually is (as Bitwarden does).
+    const atWindowCorner = Math.abs(left - current.left) < 4 && Math.abs(top - current.top) < 4;
+    if (viewMode !== 'popup' || isFirefox || atWindowCorner || (!left && !top)) {
+      left = current.left + current.width - POPUP_WIDTH - 15;
+      top = current.top + 90;
+    }
+    left = Math.round(left);
+    top = Math.round(top);
+    await chrome.windows.create({
+      url: `${url}&x=${left}&y=${top}`,
+      type: 'popup',
+      width: POPUP_WIDTH,
+      height: POPUP_HEIGHT,
+      left: left,
+      top: top,
+      focused: true
+    });
+  }
+  if (viewMode === 'popup') {
     window.close();
   }
 }
 
-document.addEventListener('DOMContentLoaded', async function () {
-  const currentTab = chrome.tabs.getCurrent ? await chrome.tabs.getCurrent() : null;
-  isTab = !!currentTab;
-  document.body.classList.toggle('is-tab', isTab);
-  document.getElementById('firefoxHint').hidden = !isFirefox || isTab;
+// The size given to windows.create includes the window frame. Once the page knows the
+// frame size, resize the window so its content is exactly the popup's size, and move it
+// so the content sits where the popup was.
+async function fitPopoutWindow() {
+  const params = new URLSearchParams(location.search);
+  const frameWidth = Math.max(0, window.outerWidth - window.innerWidth);
+  const frameHeight = Math.max(0, window.outerHeight - window.innerHeight);
+  const current = await chrome.windows.getCurrent();
+  const update = { width: POPUP_WIDTH + frameWidth, height: POPUP_HEIGHT + frameHeight };
+  if (params.has('x') && params.has('y')) {
+    const side = Math.round(frameWidth / 2);
+    update.left = Number(params.get('x')) - side;
+    update.top = Math.max(0, Number(params.get('y')) - (frameHeight - side));
+    // Only place it once; a reload keeps wherever the user moved it
+    history.replaceState(null, '', location.pathname + '?view=window');
+  }
+  if (update.width !== current.width || update.height !== current.height || 'left' in update) {
+    await chrome.windows.update(current.id, update);
+  }
+}
 
-  document.getElementById('optionsButton').addEventListener('click', openInTab);
-  document.getElementById('firefoxOpenTab').addEventListener('click', openInTab);
+document.addEventListener('DOMContentLoaded', async function () {
+  if (new URLSearchParams(location.search).get('view') === 'window') {
+    viewMode = 'window';
+  } else if (chrome.tabs.getCurrent && await chrome.tabs.getCurrent()) {
+    viewMode = 'tab';
+  }
+  document.body.classList.toggle('is-tab', viewMode === 'tab');
+  document.body.classList.toggle('is-window', viewMode === 'window');
+  document.getElementById('firefoxHint').hidden = !isFirefox || viewMode !== 'popup';
+  if (viewMode === 'window') {
+    fitPopoutWindow();
+    followActiveTab();
+  }
+
+  document.getElementById('optionsButton').addEventListener('click', openPopoutWindow);
+  document.getElementById('firefoxPopout').addEventListener('click', openPopoutWindow);
   document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
 
   setupTabs();
@@ -99,9 +161,32 @@ function updateLookupScope() {
 // ---------------------------------------------------------------------------
 // Page status and re-scan
 
+// The tab the status card is about. A popped-out window is a window of its own,
+// so there it is the active tab of the browser window used last.
 async function getActiveTab() {
+  if (viewMode === 'window') {
+    try {
+      const browserWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+      const [tab] = await chrome.tabs.query({ active: true, windowId: browserWindow.id });
+      return tab;
+    } catch (e) {
+      return null;
+    }
+  }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
+}
+
+// A popped-out window stays open while the user browses, so follow tab changes
+function followActiveTab() {
+  chrome.tabs.onActivated.addListener(() => loadPageStatus());
+  chrome.windows.onFocusChanged.addListener(() => loadPageStatus());
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'complete') {
+      // The content script scans 500 ms after load
+      setTimeout(loadPageStatus, 800);
+    }
+  });
 }
 
 function hostOf(tab) {
@@ -191,8 +276,8 @@ function setupFileUpload() {
   let dragDepth = 0;
 
   const browse = () => {
-    if (isFirefox && !isTab) {
-      openInTab();
+    if (isFirefox && viewMode === 'popup') {
+      openPopoutWindow();
     } else {
       fileInput.click();
     }

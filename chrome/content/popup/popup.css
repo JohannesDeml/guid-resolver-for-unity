@@ -730,7 +730,7 @@ button {
   font-size: inherit;
 }
 
-/* Opened as a tab (options page): no browser frame around it, so it gets its own */
+/* Opened as a tab (options page): no popup frame around it, so it gets its own */
 
 body.is-tab {
   min-height: 100vh;
@@ -747,8 +747,16 @@ body.is-tab .app {
   background: var(--bg);
 }
 
-body.is-tab #optionsButton {
+body.is-tab #optionsButton,
+body.is-window #optionsButton {
   display: none;
+}
+
+/* Popped out into its own window: fill it, so resizing the window resizes the content */
+
+body.is-window .app {
+  width: 100%;
+  height: 100vh;
 }
 
 /* Import progress, errors and confirmation */

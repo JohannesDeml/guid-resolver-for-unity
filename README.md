@@ -61,7 +61,7 @@ This repo was created out of the need to have a better experience doing PR revie
 5. Reload your current page - If you can't see any mapping applied you can use the `Re-scan` button in the extension popup.
 
 ## Troubleshooting
-* Firefox closes the popup while its file picker is open. Clicking `browse` in the popup therefore opens the extension in a tab, where you can pick the file (you can also use the open-in-tab button in the top right of the popup).
+* Firefox closes the popup while its file picker is open. Clicking `browse` in the popup therefore opens the extension in its own small window, where you can pick the file (you can also use the pop-out button in the top right of the popup).
 * For firefox, the addon will ask for permission every time you open a webpage. You can right-click on the addon to allow the addon for all content of the currently open domain
 
 ## License
