@@ -1,11 +1,5 @@
-// If the domain contains any of these strings, the script will be run
-const gitUrls = [
-  "git",
-  "bitbucket",
-  "codeberg",
-  "sourceforge",
-  "gogs",
-];
+// The list of matching URLs (guidResolverUrlParts, isGuidResolverUrl) is in sites.js,
+// which is loaded before this script.
 
 // Define the regex pattern for GUIDs
 const guidRegex = /\b([a-f0-9]{32})\b/g;
@@ -34,6 +28,7 @@ function addGuidLabels(callback) {
     if (!data || !data.guidMapping || !data.guidMapping.mapping) {
       console.log('No guid mapping stored, skipping guid labels');
       lastStats = { resolved: 0, unresolved: 0, noMapping: true };
+      reportGuidStats();
       if (callback) callback(lastStats);
       return;
     }
@@ -62,16 +57,31 @@ function runGuidReplacerDelayed(callback) {
   // Call adding labels with a small delay to make sure everything is set up
   setTimeout(function() {
     runGuidReplacer();
+    reportGuidStats();
     if (callback) callback(lastStats);
   }, 500);
+}
+
+// Tell the background script the counts of the last scan, for the toolbar badge
+function reportGuidStats() {
+  try {
+    var sent = chrome.runtime.sendMessage({ message: 'guidStats', stats: lastStats });
+    if (sent && sent.catch) {
+      sent.catch(function () {});
+    }
+  } catch (e) {
+    // The extension was reloaded or removed; this page keeps its labels
+  }
 }
 
 function runGuidReplacer() {
   console.log("Running unity guid replacer");
   var matchCount = 0;
   var nodeCount = 0;
-  var resolvedCount = 0;
-  var unresolvedCount = 0;
+  // Distinct GUIDs, so text a site keeps twice (e.g. a hidden copy of the code)
+  // or a GUID used several times in a file is only counted once
+  var resolvedGuids = new Set();
+  var unresolvedGuids = new Set();
 
   // Create a label element. The asset name is drawn by CSS (::after with attr()),
   // so it is never part of the page text: copying code does not copy the labels,
@@ -84,9 +94,9 @@ function runGuidReplacer() {
     tag.tabIndex = 0;
     if (entry && entry.fileName) {
       tag.dataset.guidName = entry.fileName;
-      resolvedCount++;
+      resolvedGuids.add(guid);
     } else {
-      unresolvedCount++;
+      unresolvedGuids.add(guid);
       tag.classList.add('guidResolverTag--missing');
       tag.dataset.guidName = 'unresolved';
       tag.title = 'No loaded mapping contains this GUID';
@@ -219,8 +229,8 @@ function runGuidReplacer() {
     traverseDataCodeTextElements(document.body);
   }
 
-  lastStats = { resolved: resolvedCount, unresolved: unresolvedCount, noMapping: false };
-  guidLabelsOnPage = resolvedCount + unresolvedCount > 0;
+  lastStats = { resolved: resolvedGuids.size, unresolved: unresolvedGuids.size, noMapping: false };
+  guidLabelsOnPage = resolvedGuids.size + unresolvedGuids.size > 0;
   console.log("Found " + matchCount + " matches" + " in " + nodeCount + " nodes (duration: " + (performance.now() - startTime) + " ms)");
 }
 
@@ -487,8 +497,7 @@ document.addEventListener('keydown', function (e) {
 
 function initIfMatchingDomain()
 {
-  var url = window.location.href;
-  if (!gitUrls.some(urlPart => url.includes(urlPart))) {
+  if (!isGuidResolverUrl(window.location.href)) {
     // No git indicator in the url, don't run the script automatically
     return;
   }
