@@ -4,9 +4,9 @@
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const numberFormat = new Intl.NumberFormat();
 
-// "1 GUID", "8,823 GUIDs"
-function count(n, word) {
-  return numberFormat.format(n) + ' ' + word + (n === 1 ? '' : 's');
+// "1 GUID", "8,823 GUIDs"; plural defaults to word + "s"
+function count(n, word, plural) {
+  return numberFormat.format(n) + ' ' + (n === 1 ? word : (plural || word + 's'));
 }
 
 // Firefox closes the popup while its file picker is open, so picking files there needs the separate window
@@ -421,16 +421,20 @@ async function handleFileUpload(file) {
     return;
   }
 
+  let result;
   try {
-    await GuidStorage.addFile(file.name, parsed);
+    result = await GuidStorage.addFile(file.name, parsed);
   } catch (error) {
     row.remove();
-    showImportError(`Couldn't import ${file.name}`, error.message || String(error));
+    showImportError(`Couldn't import ${file.name}`, (error.message || String(error)) + ' ' + IMPORT_HINT);
     return;
   }
 
   await updateFileList();
-  const added = count(Object.keys(parsed.mapping).length, 'GUID');
+  let added = count(result.count, 'GUID');
+  if (result.skipped > 0) {
+    added += ` (${count(result.skipped, 'invalid entry', 'invalid entries')} skipped)`;
+  }
   const scanned = await rescanPage();
   showToast(scanned ? `Added ${added}. Labels updated on this tab.` : `Added ${added}.`);
 }

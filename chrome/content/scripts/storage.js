@@ -8,6 +8,39 @@
 // guidMapping is the merged lookup the content script uses. Newer files win;
 // "s" is the index into "sources" of the file an entry came from.
 var GuidStorage = (function () {
+  // Unity GUIDs: 32 lowercase hex characters
+  var GUID_KEY = /^[0-9a-f]{32}$/;
+  var MAX_NAME_LENGTH = 512;
+  var MAX_META_LENGTH = 200;
+
+  function validName(name) {
+    return typeof name === 'string' && name.length > 0 && name.length <= MAX_NAME_LENGTH;
+  }
+
+  // Optional text fields of a file (project name, version, date)
+  function metaText(value) {
+    return typeof value === 'string' ? value.slice(0, MAX_META_LENGTH) : undefined;
+  }
+
+  // Keep only entries with a GUID key and a file name; drop everything else
+  // (other fields, wrong types, keys such as "__proto__").
+  function sanitizeMapping(mapping) {
+    var clean = {};
+    var kept = 0;
+    var skipped = 0;
+    Object.keys(mapping).forEach(function (key) {
+      var entry = mapping[key];
+      var name = entry && typeof entry === 'object' ? entry.fileName : undefined;
+      if (GUID_KEY.test(key) && validName(name)) {
+        clean[key] = { fileName: name };
+        kept++;
+      } else {
+        skipped++;
+      }
+    });
+    return { mapping: clean, kept: kept, skipped: skipped };
+  }
+
   function fileTime(file) {
     var time = new Date(file.creationDate || file.uploadDate || 0).getTime();
     return isNaN(time) ? 0 : time;
@@ -35,26 +68,31 @@ var GuidStorage = (function () {
     return mapping ? Object.keys(mapping).length : 0;
   }
 
-  // Store a parsed mapping file (must contain "mapping") and rebuild the merged lookup.
-  // Returns the id the file is stored under.
+  // Store a parsed mapping file and rebuild the merged lookup. Invalid entries are
+  // skipped. Returns { id, count, skipped }; throws if nothing valid is left.
   async function addFile(fileName, parsed) {
-    if (!parsed || typeof parsed.mapping !== 'object' || parsed.mapping === null) {
+    if (!parsed || typeof parsed.mapping !== 'object' || parsed.mapping === null || Array.isArray(parsed.mapping)) {
       throw new Error('The file has no "mapping" field at the root.');
     }
-    var id = fileName + ' - ' + parsed.creationDate;
+    var result = sanitizeMapping(parsed.mapping);
+    if (result.kept === 0) {
+      throw new Error('The file contains no valid GUID entries.');
+    }
+    var creationDate = metaText(parsed.creationDate);
+    var id = fileName + ' - ' + creationDate;
     var data = await chrome.storage.local.get('guidFiles');
     var files = data.guidFiles || {};
     files[id] = {
       fileName: fileName,
-      creationDate: parsed.creationDate,
+      creationDate: creationDate,
       uploadDate: new Date().toISOString(),
-      projectName: parsed.projectName,
-      projectVersion: parsed.projectVersion,
-      mapping: parsed.mapping
+      projectName: metaText(parsed.projectName),
+      projectVersion: metaText(parsed.projectVersion),
+      mapping: result.mapping
     };
     await chrome.storage.local.set({ guidFiles: files });
     await rebuildMerged();
-    return id;
+    return { id: id, count: result.kept, skipped: result.skipped };
   }
 
   async function removeFile(id) {
@@ -81,11 +119,14 @@ var GuidStorage = (function () {
         projectName: file.projectName,
         projectVersion: file.projectVersion
       });
+      // Files stored by older versions were not validated on import
       var entries = file.mapping || {};
-      for (var guid in entries) {
+      Object.keys(entries).forEach(function (guid) {
         var entry = entries[guid];
-        mapping[guid] = { fileName: entry && entry.fileName, s: index };
-      }
+        if (GUID_KEY.test(guid) && entry && validName(entry.fileName)) {
+          mapping[guid] = { fileName: entry.fileName, s: index };
+        }
+      });
     }
     await chrome.storage.local.set({ guidMapping: { mapping: mapping, sources: sources } });
   }
