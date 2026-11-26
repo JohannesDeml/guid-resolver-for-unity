@@ -40,11 +40,43 @@ function iconPaths(inactive) {
   return paths;
 }
 
-function setTabIconActive(tabId, active) {
-  var done = toolbarAction.setIcon({ tabId: tabId, path: iconPaths(!active) });
-  if (done && done.catch) {
-    done.catch(function () {}); // the tab was closed meanwhile
+// The icons are drawn into ImageData once and set from that, instead of by file
+// path: Firefox could lose a tab's path-based icon later on (blank toolbar button).
+var iconImageCache = {};
+
+function loadIconImageData(inactive) {
+  var key = inactive ? 'inactive' : 'active';
+  if (!iconImageCache[key]) {
+    var paths = iconPaths(inactive);
+    iconImageCache[key] = Promise.all(TOOLBAR_ICON_SIZES.map(function (size) {
+      var pixels = Number(size);
+      return fetch(chrome.runtime.getURL(paths[size].slice(1)))
+        .then(function (response) { return response.blob(); })
+        .then(function (blob) { return createImageBitmap(blob); })
+        .then(function (bitmap) {
+          var canvas = new OffscreenCanvas(pixels, pixels);
+          var context = canvas.getContext('2d');
+          context.drawImage(bitmap, 0, 0, pixels, pixels);
+          return [size, context.getImageData(0, 0, pixels, pixels)];
+        });
+    })).then(function (entries) {
+      var imageData = {};
+      entries.forEach(function (entry) { imageData[entry[0]] = entry[1]; });
+      return imageData;
+    });
+    // Try again next time if drawing failed
+    iconImageCache[key].catch(function () { delete iconImageCache[key]; });
   }
+  return iconImageCache[key];
+}
+
+function setTabIconActive(tabId, active) {
+  loadIconImageData(!active).then(function (imageData) {
+    return toolbarAction.setIcon({ tabId: tabId, imageData: imageData });
+  }, function () {
+    // Drawing not possible: fall back to the file paths
+    return toolbarAction.setIcon({ tabId: tabId, path: iconPaths(!active) });
+  }).catch(function () {}); // the tab was closed meanwhile
 }
 
 function updateTabIcon(tab) {
