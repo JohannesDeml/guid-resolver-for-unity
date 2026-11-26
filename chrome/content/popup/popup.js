@@ -439,19 +439,17 @@ async function handleFileUpload(file) {
   showToast(scanned ? `Added ${added}. Labels updated on this tab.` : `Added ${added}.`);
 }
 
-function createIconButton(label, svgPath, onClick) {
+// Icons come from <template> elements in popup.html, so no markup is built from strings
+function createIconButton(label, iconTemplateId, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'icon-button icon-button--small';
   button.setAttribute('aria-label', label);
   button.title = label;
-  button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svgPath + '</svg>';
+  button.append(document.getElementById(iconTemplateId).content.cloneNode(true));
   button.addEventListener('click', onClick);
   return button;
 }
-
-const ICON_DOWNLOAD = '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 11l5 5l5-5"/><path d="M12 4l0 12"/>';
-const ICON_TRASH = '<path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12"/><path d="M9 7v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/>';
 
 function formatDate(value) {
   const date = new Date(value);
@@ -487,8 +485,8 @@ function createFileRow(file) {
   text.append(nameLine, meta);
   row.append(
     text,
-    createIconButton('Download ' + file.fileName, ICON_DOWNLOAD, () => downloadFileData(file.id)),
-    createIconButton('Remove ' + name, ICON_TRASH, (e) => {
+    createIconButton('Download ' + file.fileName, 'iconDownload', () => downloadFileData(file.id)),
+    createIconButton('Remove ' + name, 'iconTrash', (e) => {
       e.currentTarget.disabled = true;
       row.classList.add('is-removing');
       deleteFile(file.id);
