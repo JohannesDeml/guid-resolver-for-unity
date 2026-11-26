@@ -1,5 +1,104 @@
-.guidResolverTag {
-    background-color: #ffff00aa;
+/* GUID labels, drawn after each GUID found on the page.
+   The name comes from data-guid-name via ::after, so it is never copied with the code.
+   Every colour is declared twice: a plain light value for older browsers,
+   then light-dark(), which follows the page's color-scheme (Chrome 123+, Firefox 120+). */
+span.guidResolverTag {
+    display: inline;
+    margin-left: 0.4em;
+    padding: 0 0.35em;
+    border: 1px solid #bef264;
+    border-radius: 4px;
+    background-color: #ecfccb;
+    color: #365314;
+    border-color: light-dark(#bef264, rgba(200, 253, 70, 0.35));
+    background-color: light-dark(#ecfccb, rgba(200, 253, 70, 0.10));
+    color: light-dark(#365314, #d9f99d);
+    font: inherit;
     font-weight: normal;
-    color: #000;
+    font-style: normal;
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
+span.guidResolverTag::after {
+    content: attr(data-guid-name);
+}
+
+span.guidResolverTag.guidResolverTag--missing {
+    border-style: dashed;
+    border-color: #fb923c;
+    background-color: #fff7ed;
+    color: #9a3412;
+    border-color: light-dark(#fb923c, rgba(251, 146, 60, 0.55));
+    background-color: light-dark(#fff7ed, rgba(251, 146, 60, 0.10));
+    color: light-dark(#9a3412, #fdba74);
+}
+
+span.guidResolverTag:focus-visible {
+    outline: 2px solid #6a00db;
+    outline-offset: 1px;
+}
+
+/* Hover card for a label */
+div.guidResolverCard {
+    position: absolute;
+    z-index: 2147483000;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(320px, calc(100vw - 16px));
+    padding: 10px 12px;
+    border: 1px solid #d1d9e0;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1f2328;
+    border-color: light-dark(#d1d9e0, #3d444d);
+    background: light-dark(#ffffff, #151b23);
+    color: light-dark(#1f2328, #e6edf3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    font: 12px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    text-align: left;
+    white-space: normal;
+}
+
+.guidResolverCard__name {
+    font: 700 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+.guidResolverCard__guid {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    opacity: 0.8;
+}
+
+.guidResolverCard__source {
+    opacity: 0.8;
+    overflow-wrap: anywhere;
+}
+
+.guidResolverCard__actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+button.guidResolverCard__button {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #0969da;
+    color: light-dark(#0969da, #4493f8);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button.guidResolverCard__button:hover {
+    text-decoration: underline;
 }

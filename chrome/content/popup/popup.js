@@ -1,276 +1,543 @@
-// Initialize the UI
-updateFileList();
+// Popup of GUID Resolver for Unity
+// Depends on ../scripts/storage.js (GuidStorage)
 
-document.addEventListener('DOMContentLoaded', function () {
-  document.getElementById('optionsButton').addEventListener('click', function () {
-    if (chrome.runtime.openOptionsPage) {
-      // New way to open options pages, introduced in Chrome 42.
-      chrome.runtime.openOptionsPage();
-    } else {
-      // Reasonable fallback.
-      window.open(chrome.runtime.getURL('options.html'));
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const numberFormat = new Intl.NumberFormat();
+
+// "1 GUID", "8,823 GUIDs"; plural defaults to word + "s"
+function count(n, word, plural) {
+  return numberFormat.format(n) + ' ' + (n === 1 ? word : (plural || word + 's'));
+}
+
+// Firefox closes the popup while its file picker is open, so picking files there needs the separate window
+const isFirefox = chrome.runtime.getURL('').startsWith('moz-extension://');
+const POPUP_WIDTH = 360;
+const POPUP_HEIGHT = 560;
+// How this page is shown: 'popup' (toolbar popup), 'window' (popped out) or 'tab' (options page)
+let viewMode = 'popup';
+
+// Pop the popup out into its own small window at the popup's position,
+// or focus that window if it is already open
+async function openPopoutWindow() {
+  const url = location.origin + location.pathname + '?view=window';
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+  const existing = windows.find(w => (w.tabs || []).some(t => t.url && t.url.startsWith(url)));
+  if (existing) {
+    await chrome.windows.update(existing.id, { focused: true });
+  } else {
+    const current = await chrome.windows.getCurrent();
+    let left = window.screenX;
+    let top = window.screenY;
+    // Chrome reports the popup's own screen position. Firefox does not (it gives the
+    // browser window's), so there, and whenever the position looks like the browser
+    // window's corner, use the top right of the browser window below the toolbar,
+    // where the extension button usually is (as Bitwarden does).
+    const atWindowCorner = Math.abs(left - current.left) < 4 && Math.abs(top - current.top) < 4;
+    if (viewMode !== 'popup' || isFirefox || atWindowCorner || (!left && !top)) {
+      left = current.left + current.width - POPUP_WIDTH - 15;
+      top = current.top + 90;
     }
-  });
+    left = Math.round(left);
+    top = Math.round(top);
+    await chrome.windows.create({
+      url: `${url}&x=${left}&y=${top}`,
+      type: 'popup',
+      width: POPUP_WIDTH,
+      height: POPUP_HEIGHT,
+      left: left,
+      top: top,
+      focused: true
+    });
+  }
+  if (viewMode === 'popup') {
+    window.close();
+  }
+}
 
+// The size given to windows.create includes the window frame. Once the page knows the
+// frame size, resize the window so its content is exactly the popup's size, and move it
+// so the content sits where the popup was.
+async function fitPopoutWindow() {
+  const params = new URLSearchParams(location.search);
+  const frameWidth = Math.max(0, window.outerWidth - window.innerWidth);
+  const frameHeight = Math.max(0, window.outerHeight - window.innerHeight);
+  const current = await chrome.windows.getCurrent();
+  const update = { width: POPUP_WIDTH + frameWidth, height: POPUP_HEIGHT + frameHeight };
+  if (params.has('x') && params.has('y')) {
+    const side = Math.round(frameWidth / 2);
+    update.left = Number(params.get('x')) - side;
+    update.top = Math.max(0, Number(params.get('y')) - (frameHeight - side));
+    // Only place it once; a reload keeps wherever the user moved it
+    history.replaceState(null, '', location.pathname + '?view=window');
+  }
+  if (update.width !== current.width || update.height !== current.height || 'left' in update) {
+    await chrome.windows.update(current.id, update);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  if (new URLSearchParams(location.search).get('view') === 'window') {
+    viewMode = 'window';
+  } else if (chrome.tabs.getCurrent && await chrome.tabs.getCurrent()) {
+    viewMode = 'tab';
+  }
+  document.body.classList.toggle('is-tab', viewMode === 'tab');
+  document.body.classList.toggle('is-window', viewMode === 'window');
+  document.getElementById('firefoxHint').hidden = !isFirefox || viewMode !== 'popup';
+  if (viewMode === 'window') {
+    fitPopoutWindow();
+    followActiveTab();
+  }
+
+  document.getElementById('optionsButton').addEventListener('click', openPopoutWindow);
+  document.getElementById('firefoxPopout').addEventListener('click', openPopoutWindow);
+  document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
+  setupThemeToggle();
+
+  setupTabs();
   setupFileUpload();
+  document.getElementById('rescanButton').addEventListener('click', rescanPage);
 
-  var updatePageButton = document.getElementById('updatePageButton');
-  updatePageButton.addEventListener('click', updateLabelsOnPage);
+  updateFileList();
+  loadPageStatus();
 });
 
-function setupFileUpload() {
-  const uploadArea = document.getElementById('uploadArea');
-  const fileInput = document.getElementById('jsonFile');
+// Light/dark toggle in the footer. theme.js applies the saved choice on load;
+// without one, the system theme is used.
+function setupThemeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById('themeToggle');
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  const currentTheme = () => root.dataset.theme || (systemDark.matches ? 'dark' : 'light');
 
-  // Handle drag and drop events
-  uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.add('drag-over');
+  function render() {
+    const dark = currentTheme() === 'dark';
+    const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    // SVG elements have no hidden property, so set the attribute
+    button.querySelector('.theme-toggle__moon').toggleAttribute('hidden', dark);
+    button.querySelector('.theme-toggle__sun').toggleAttribute('hidden', !dark);
+  }
+
+  button.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try {
+      localStorage.setItem('ui.theme', next);
+    } catch (e) {
+      // Not saved; the choice lasts until the popup closes
+    }
+    render();
   });
-
-  uploadArea.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.remove('drag-over');
-  });
-
-  uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.remove('drag-over');
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileUpload(files[0]);
-      fileInput.value = ''; // Reset file input after drop
+  systemDark.addEventListener('change', render);
+  // Keep the popup and a popped-out window in sync
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'ui.theme' && (e.newValue === 'light' || e.newValue === 'dark')) {
+      root.dataset.theme = e.newValue;
+      render();
     }
   });
+  render();
+}
 
-  // Handle click to upload
-  uploadArea.addEventListener('click', () => {
-    fileInput.click();
+// Mappings / Lookup tabs. The last opened tab is restored on the next open.
+function setupTabs() {
+  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+
+  function select(tab, options) {
+    tabs.forEach(t => {
+      const selected = t === tab;
+      t.setAttribute('aria-selected', String(selected));
+      t.tabIndex = selected ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !selected || !document.getElementById('firstRun').hidden;
+    });
+    if (options.focusTab) {
+      tab.focus();
+    }
+    if (options.remember) {
+      chrome.storage.local.set({ 'ui.lastTab': tab.id });
+    }
+    if (tab.id === 'tab-lookup') {
+      updateLookupScope();
+      if (!options.focusTab) {
+        document.getElementById('lookupInput').focus();
+      }
+    }
+  }
+
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => select(tab, { remember: true }));
+    tab.addEventListener('keydown', (e) => {
+      let next = null;
+      if (e.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
+      if (e.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
+      if (e.key === 'Home') next = tabs[0];
+      if (e.key === 'End') next = tabs[tabs.length - 1];
+      if (next) {
+        e.preventDefault();
+        select(next, { remember: true, focusTab: true });
+      }
+    });
   });
 
+  chrome.storage.local.get('ui.lastTab').then(data => {
+    const last = tabs.find(t => t.id === data['ui.lastTab']);
+    if (last) {
+      select(last, { remember: false });
+    }
+  });
+}
+
+function updateLookupScope() {
+  Promise.all([GuidStorage.getFiles(), GuidStorage.getMergedCount()]).then(([files, total]) => {
+    const scope = document.getElementById('lookupScope');
+    scope.textContent = files.length
+      ? `Searches ${count(files.length, 'mapping')} · ${count(total, 'GUID')}.`
+      : 'Add a mapping file first.';
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Page status and re-scan
+
+// The tab the status card is about. A popped-out window is a window of its own,
+// so there it is the active tab of the browser window used last.
+async function getActiveTab() {
+  if (viewMode === 'window') {
+    try {
+      const browserWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+      const [tab] = await chrome.tabs.query({ active: true, windowId: browserWindow.id });
+      return tab;
+    } catch (e) {
+      return null;
+    }
+  }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+// A popped-out window stays open while the user browses, so follow tab changes
+function followActiveTab() {
+  chrome.tabs.onActivated.addListener(() => loadPageStatus());
+  chrome.windows.onFocusChanged.addListener(() => loadPageStatus());
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'complete') {
+      // The content script scans 500 ms after load
+      setTimeout(loadPageStatus, 800);
+    }
+  });
+}
+
+function hostOf(tab) {
+  try {
+    return new URL(tab.url).hostname || tab.url;
+  } catch (e) {
+    return '';
+  }
+}
+
+function setPageStatus(title, detail) {
+  document.getElementById('pageStatusTitle').textContent = title;
+  document.getElementById('pageStatusDetail').textContent = detail || '';
+}
+
+function showStats(stats, host) {
+  if (!stats) {
+    setPageStatus('Not scanned yet', host);
+  } else if (stats.noMapping) {
+    setPageStatus('No mapping loaded', 'Add a mapping file below');
+  } else {
+    setPageStatus(`${count(stats.resolved, 'GUID')} found`, `${host} · ${numberFormat.format(stats.unresolved)} unresolved`);
+  }
+}
+
+async function loadPageStatus() {
+  const tab = await getActiveTab();
+  if (!tab) {
+    setPageStatus('No page open');
+    return;
+  }
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { message: 'getGuidStats' });
+    showStats(response && response.stats, hostOf(tab));
+  } catch (e) {
+    // No content script in this tab (opened before install, or a restricted page)
+    setPageStatus('Labels aren\'t active on this page', hostOf(tab));
+  }
+}
+
+// Inject the content script into a tab that was opened before the extension was installed
+async function injectContentScript(tabId) {
+  const contentScript = chrome.runtime.getManifest().content_scripts[0];
+  if (contentScript.css) {
+    await chrome.scripting.insertCSS({ target: { tabId: tabId }, files: contentScript.css });
+  }
+  await chrome.scripting.executeScript({ target: { tabId: tabId }, files: contentScript.js });
+}
+
+async function rescanPage() {
+  const button = document.getElementById('rescanButton');
+  const label = document.getElementById('rescanLabel');
+  const tab = await getActiveTab();
+  if (!tab) return false;
+
+  button.disabled = true;
+  button.classList.add('is-busy');
+  label.textContent = 'Scanning';
+  setPageStatus('Scanning page…', hostOf(tab));
+  try {
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, { message: 'addGuidLabels' });
+    } catch (e) {
+      await injectContentScript(tab.id);
+      response = await chrome.tabs.sendMessage(tab.id, { message: 'addGuidLabels' });
+    }
+    showStats(response && response.stats, hostOf(tab));
+    return true;
+  } catch (e) {
+    setPageStatus('Labels can\'t run on this page', hostOf(tab));
+    return false;
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-busy');
+    label.textContent = 'Re-scan';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mapping files
+
+function setupFileUpload() {
+  const dropZone = document.getElementById('addMapping');
+  const fileInput = document.getElementById('jsonFile');
+  const overlay = document.getElementById('dragOverlay');
+  let dragDepth = 0;
+
+  const browse = () => {
+    if (isFirefox && viewMode === 'popup') {
+      openPopoutWindow();
+    } else {
+      fileInput.click();
+    }
+  };
+  dropZone.addEventListener('click', browse);
+  document.getElementById('firstRunAdd').addEventListener('click', browse);
+  document.getElementById('importErrorRetry').addEventListener('click', browse);
+  document.getElementById('importErrorDismiss').addEventListener('click', hideImportError);
   fileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
       handleFileUpload(e.target.files[0]);
-      fileInput.value = ''; // Reset file input after selection
+      fileInput.value = '';
+    }
+  });
+
+  // The whole popup is the drop target. dragenter/dragleave fire for every
+  // child element, so a depth counter keeps the overlay from flickering.
+  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  document.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    overlay.hidden = false;
+  });
+  document.addEventListener('dragover', (e) => {
+    if (hasFiles(e)) e.preventDefault();
+  });
+  document.addEventListener('dragleave', (e) => {
+    if (!hasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) overlay.hidden = true;
+  });
+  document.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.hidden = true;
+    if (e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files[0]);
     }
   });
 }
 
-function handleFileUpload(file) {
-  const uploadArea = document.getElementById('uploadArea');
-  const statusText = uploadArea.querySelector('.status-text');
+function showImportError(title, text) {
+  document.getElementById('importErrorTitle').textContent = title;
+  document.getElementById('importErrorText').textContent = text;
+  document.getElementById('importError').hidden = false;
+  if (!document.getElementById('tabsBar').hidden) {
+    document.getElementById('tab-mappings').click();
+  }
+}
 
-  // Add loading class to the upload area to show the status text & loading spinner
+function hideImportError() {
+  document.getElementById('importError').hidden = true;
+}
 
+let toastTimer = null;
+function showToast(text) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toastText').textContent = text;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+}
+
+// Temporary row at the top of the list while a file is read and stored
+function showImportingRow(file) {
+  const row = document.createElement('div');
+  row.className = 'file-row file-row--importing';
+  row.setAttribute('role', 'listitem');
+  row.innerHTML = '<div class="file-row__head"><span class="file-row__name"></span><span class="file-row__meta">Parsing…</span></div>'
+    + '<div class="progress"><div class="progress__bar"></div></div>'
+    + '<span class="file-row__meta"></span>';
+  row.querySelector('.file-row__name').textContent = file.name;
+  row.lastElementChild.textContent = (file.size / (1024 * 1024)).toFixed(1) + ' MB · rows appear when done';
+  document.getElementById('fileList').prepend(row);
+  return row;
+}
+
+const IMPORT_HINT = 'Use the file from Assets › Generate Full GUID Mapping.';
+
+async function handleFileUpload(file) {
+  hideImportError();
   if (!file.name.toLowerCase().endsWith('.json')) {
-    uploadArea.classList.add('error');
-    statusText.innerText = 'Please select a JSON file.';
-    setTimeout(() => {
-      statusText.innerText = '';
-      uploadArea.classList.remove('error');
-    }, 2000);
+    showImportError(`Couldn't import ${file.name}`, 'Mapping files are .json files. ' + IMPORT_HINT);
     return;
   }
 
-  uploadArea.classList.add('loading');
-  statusText.innerText = 'Loading JSON file...';
+  const row = showImportingRow(file);
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (error) {
+    row.remove();
+    showImportError(`Couldn't import ${file.name}`, 'The file is not valid JSON. ' + IMPORT_HINT);
+    return;
+  }
+  if (!parsed || typeof parsed.mapping !== 'object' || parsed.mapping === null) {
+    row.remove();
+    showImportError(`Couldn't import ${file.name}`, 'No "mapping" field at the root. ' + IMPORT_HINT);
+    return;
+  }
 
-  const reader = new FileReader();
+  let result;
+  try {
+    result = await GuidStorage.addFile(file.name, parsed);
+  } catch (error) {
+    row.remove();
+    showImportError(`Couldn't import ${file.name}`, (error.message || String(error)) + ' ' + IMPORT_HINT);
+    return;
+  }
 
-  reader.onload = function (e) {
-    try {
-      statusText.innerText = 'Parsing JSON file ' + file.name + '...';
-      const parsedData = JSON.parse(e.target.result);
-
-      if (parsedData && parsedData.hasOwnProperty('mapping')) {
-        // Generate a unique ID for this file
-        const fileId = file.name + " - " + parsedData.creationDate;
-
-        // Store the individual file data
-        chrome.storage.local.get('guidFiles', function(data) {
-          const guidFiles = data.guidFiles || {};
-          guidFiles[fileId] = {
-            fileName: file.name,
-            creationDate: parsedData.creationDate,
-            uploadDate: new Date().toISOString(),
-            projectName: parsedData.projectName,
-            projectVersion: parsedData.projectVersion,
-            mapping: parsedData.mapping
-          };
-
-          chrome.storage.local.set({ 'guidFiles': guidFiles }, function() {
-            var error = chrome.runtime.lastError;
-            if (error) {
-               alert('JSON file upload error: ' + (error.message || JSON.stringify(error)));
-            }
-            generateMergedMapping(function() {
-              var error = chrome.runtime.lastError;
-              if (error) {
-                statusText.innerText = 'JSON file upload error: ' + (error.message || JSON.stringify(error));
-              } else {
-                statusText.innerText = 'JSON file uploaded successfully';
-                setTimeout(() => {
-                  uploadArea.classList.remove('loading');
-                  statusText.innerText = '';
-                }, 1000);
-              }
-              updateFileList();
-            });
-          });
-        });
-      } else {
-        statusText.innerText = 'JSON file must contain a "mapping" field in the root.';
-        uploadArea.classList.remove('loading');
-      }
-    } catch (error) {
-      statusText.innerText = 'Error parsing JSON file: ' + error.message;
-      uploadArea.classList.remove('loading');
-    }
-  };
-
-  reader.onerror = function() {
-    statusText.innerText = 'Error reading file';
-    uploadArea.classList.remove('loading');
-  };
-
-  reader.readAsText(file);
+  await updateFileList();
+  let added = count(result.count, 'GUID');
+  if (result.skipped > 0) {
+    added += ` (${count(result.skipped, 'invalid entry', 'invalid entries')} skipped)`;
+  }
+  const scanned = await rescanPage();
+  showToast(scanned ? `Added ${added}. Labels updated on this tab.` : `Added ${added}.`);
 }
 
-function generateMergedMapping(callback) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles) {
-      if (callback) callback();
-      return;
-    }
+// Icons come from <template> elements in popup.html, so no markup is built from strings
+function createIconButton(label, iconTemplateId, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'icon-button icon-button--small';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.append(document.getElementById(iconTemplateId).content.cloneNode(true));
+  button.addEventListener('click', onClick);
+  return button;
+}
 
-    var mergedMapping = {};
-    var files = Object.entries(data.guidFiles);
+function formatDate(value) {
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? (value || 'unknown date') : dateFormat.format(date);
+}
 
-    // Sort files by creation date (newest first)
-    files.sort((a, b) => new Date(b[1].creationDate) - new Date(a[1].creationDate));
+function createFileRow(file) {
+  const name = file.projectName || file.fileName;
+  const entryCount = Object.keys(file.mapping || {}).length;
 
-    // Merge mappings, newer files overwrite older ones
-    files.forEach(([fileId, fileData]) => {
-      Object.assign(mergedMapping, fileData.mapping);
-    });
+  const row = document.createElement('div');
+  row.className = 'file-row';
+  row.setAttribute('role', 'listitem');
+  row.title = file.fileName;
 
-    // Store the merged mapping
-    chrome.storage.local.set({ 'guidMapping': { mapping: mergedMapping } }, function() {
-      if (callback) callback();
-    });
+  const text = document.createElement('div');
+  text.className = 'file-row__text';
+
+  const nameLine = document.createElement('span');
+  nameLine.className = 'file-row__name';
+  nameLine.textContent = name + ' ';
+  if (file.projectVersion) {
+    const version = document.createElement('span');
+    version.className = 'file-row__version';
+    version.textContent = 'v' + file.projectVersion;
+    nameLine.appendChild(version);
+  }
+
+  const meta = document.createElement('span');
+  meta.className = 'file-row__meta';
+  meta.textContent = `${count(entryCount, 'GUID')} · ${formatDate(file.creationDate)}`;
+
+  text.append(nameLine, meta);
+  row.append(
+    text,
+    createIconButton('Download ' + file.fileName, 'iconDownload', () => downloadFileData(file.id)),
+    createIconButton('Remove ' + name, 'iconTrash', (e) => {
+      e.currentTarget.disabled = true;
+      row.classList.add('is-removing');
+      deleteFile(file.id);
+    })
+  );
+  return row;
+}
+
+async function updateFileList() {
+  const fileList = document.getElementById('fileList');
+  const totalEntries = document.getElementById('totalEntries');
+  const [files, total] = await Promise.all([GuidStorage.getFiles(), GuidStorage.getMergedCount()]);
+
+  fileList.replaceChildren(...files.map(createFileRow));
+  totalEntries.textContent = files.length ? count(total, 'GUID') : 'none loaded';
+  setFirstRun(files.length === 0);
+}
+
+// Without any mapping, the tabs are hidden and the setup steps are shown instead
+function setFirstRun(firstRun) {
+  const wasFirstRun = !document.getElementById('firstRun').hidden;
+  document.getElementById('firstRun').hidden = !firstRun;
+  document.getElementById('tabsBar').hidden = firstRun;
+  document.querySelectorAll('[role="tab"]').forEach(tab => {
+    const panel = document.getElementById(tab.getAttribute('aria-controls'));
+    panel.hidden = firstRun || tab.getAttribute('aria-selected') !== 'true';
   });
+  // Show the new file after the first import
+  if (wasFirstRun && !firstRun) {
+    document.getElementById('tab-mappings').click();
+  }
 }
 
-function updateFileList() {
-  var fileListDiv = document.getElementById('fileList');
-  var totalEntriesDiv = document.getElementById('totalEntries');
-
-  chrome.storage.local.get(['guidFiles', 'guidMapping'], function(data) {
-    if (!data.guidFiles) {
-      fileListDiv.innerHTML = '<div class="file-item">No files uploaded</div>';
-      totalEntriesDiv.textContent = 'Total entries: 0';
-      return;
-    }
-
-    var files = Object.entries(data.guidFiles);
-    // Sort files by creation date in descending order (newest first)
-    files.sort((a, b) => new Date(b[1].creationDate) - new Date(a[1].creationDate));
-
-    var totalEntries = data.guidMapping && data.guidMapping.mapping ?
-      Object.keys(data.guidMapping.mapping).length : 0;
-
-    fileListDiv.innerHTML = files.map(([fileId, fileData]) => {
-      return `
-        <div class="file-item" data-file-id="${fileId}">
-          <div>${fileData.fileName}</div>
-          <div style="font-size: 0.8em; color: #666;">${fileData.creationDate}</div>
-          ${fileData.projectName ? `<div style="font-size: 0.8em; color: #666;">${fileData.projectName} ${fileData.projectVersion ? `- ${fileData.projectVersion}` : ''}</div>` : ''}
-          <div style="font-size: 0.8em;">
-            ${Object.keys(fileData.mapping).length} entries
-            <a href="#" class="download-link" data-file-id="${fileId}">Download</a>
-          </div>
-          <button class="delete-btn" data-file-id="${fileId}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M18 6l-12 12" />
-              <path d="M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      `;
-    }).join('');
-
-    totalEntriesDiv.textContent = `Total unique entries: ${totalEntries}`;
-
-    // Add delete button listeners
-    fileListDiv.querySelectorAll('.delete-btn').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const button = this;
-        button.classList.add('loading');
-        deleteFile(this.dataset.fileId);
-      });
-    });
-
-    // Add download link listeners
-    fileListDiv.querySelectorAll('.download-link').forEach(link => {
-      link.addEventListener('click', function(e) {
-        e.preventDefault();
-        downloadFileData(this.dataset.fileId);
-      });
-    });
-  });
+async function deleteFile(fileId) {
+  await GuidStorage.removeFile(fileId);
+  updateFileList();
 }
 
-function deleteFile(fileId) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles) return;
+async function downloadFileData(fileId) {
+  const file = await GuidStorage.getFile(fileId);
+  if (!file) return;
 
-    delete data.guidFiles[fileId];
-    chrome.storage.local.set({ 'guidFiles': data.guidFiles }, function() {
-      generateMergedMapping(function() {
-        updateFileList();
-      });
-    });
-  });
+  const blob = new Blob([GuidStorage.toJson(file)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
-
-function updateLabelsOnPage() {
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    var activeTab = tabs[0];
-    chrome.tabs.sendMessage(activeTab.id, { message: "addGuidLabels" }, function (response) { });
-  });
-}
-
-function downloadFileData(fileId) {
-  chrome.storage.local.get('guidFiles', function(data) {
-    if (!data.guidFiles || !data.guidFiles[fileId]) return;
-
-    const fileData = data.guidFiles[fileId];
-    const jsonContent = JSON.stringify({
-      creationDate: fileData.creationDate,
-      projectName: fileData.projectName,
-      projectVersion: fileData.projectVersion,
-      mapping: fileData.mapping
-    }, null, 2);
-
-    const blob = new Blob([jsonContent], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileData.fileName;
-    document.body.appendChild(a);
-    a.click();
-
-    // Cleanup
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 0);
-  });
-}
-

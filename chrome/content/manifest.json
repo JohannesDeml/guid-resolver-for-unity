@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "GUID Resolver for Unity",
-  "version": "1.2.0",
+  "version": "2.0.1",
   "description": "Resolve GUIDs from a unity project to their asset names",
   "browser_specific_settings": {
     "gecko": {
       "id": "unityguidresolver@deml.io",
-      "strict_min_version": "58.0"
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "icons": {
@@ -31,11 +34,11 @@
     "unlimitedStorage"
   ],
   "background": {
-    "scripts": ["scripts/background.js"]
+    "scripts": ["scripts/storage.js", "scripts/sites.js", "scripts/background.js"]
   },
   "content_scripts": [
     {
-      "js": ["scripts/content.js"],
+      "js": ["scripts/sites.js", "scripts/content.js"],
       "css": ["styles/styles.css"],
       "matches": ["<all_urls>"]
     }

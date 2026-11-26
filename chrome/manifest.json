@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GUID Resolver for Unity",
-  "version": "1.2.0",
+  "version": "2.0.1",
   "description": "Resolve GUIDs from a unity project to their asset names",
 
   "icons": {
@@ -24,7 +24,7 @@
   },
   "content_scripts": [
     {
-      "js": ["content/scripts/content.js"],
+      "js": ["content/scripts/sites.js", "content/scripts/content.js"],
       "css": ["content/styles/styles.css"],
       "matches": ["<all_urls>"]
     }
