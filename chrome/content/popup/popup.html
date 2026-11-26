@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <title>GUID Resolver for Unity</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="popup.css">
 </head>
 
@@ -144,11 +145,13 @@
     </div>
 
     <footer class="footer">
-      <span id="version"></span>
-      <a class="footer__link" href="https://github.com/JohannesDeml/guid-resolver-for-unity" target="_blank" rel="noopener">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8l-4 4l4 4"/><path d="M17 8l4 4l-4 4"/><path d="M14 4l-4 16"/></svg>
-        GitHub
+      <a class="footer__link" href="https://github.com/JohannesDeml/guid-resolver-for-unity" target="_blank" rel="noopener" title="GUID Resolver on GitHub">
+        <span id="version"></span>
       </a>
+      <button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">
+        <svg class="theme-toggle__moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1-8.313-12.454z"/></svg>
+        <svg class="theme-toggle__sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"/><path d="M3 12h1m8-9v1m8 8h1m-9 8v1m-6.4-15.4l.7.7m12.1-.7l-.7.7m0 11.4l.7.7m-12.1-.7l-.7.7"/></svg>
+      </button>
     </footer>
   </div>
 

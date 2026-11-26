@@ -33,8 +33,9 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Dark theme: follows the system unless the footer toggle set data-theme on <html> */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #232327;
     --surface: #2c2c31;
     --border: #3a3a41;
@@ -61,6 +62,42 @@
     --danger-strong: #f87171;
     --hover: rgba(255, 255, 255, 0.08);
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #232327;
+  --surface: #2c2c31;
+  --border: #3a3a41;
+  --input-border: #4a4a52;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #b48cff;
+  --accent-hover: #c4a3ff;
+  --on-accent: #1a0a33;
+  --dash: #52525b;
+  --link: #c4a3ff;
+  --seg: #1a1a1e;
+  --seg-on: #3a3a41;
+  --seg-shadow: none;
+  --chip-bg: rgba(200, 253, 70, 0.10);
+  --chip-fg: #d9f99d;
+  --chip-border: rgba(200, 253, 70, 0.35);
+  --warn-bg: rgba(251, 146, 60, 0.08);
+  --warn-border: rgba(251, 146, 60, 0.55);
+  --warn-fg: #fdba74;
+  --danger-bg: rgba(248, 113, 113, 0.10);
+  --danger-border: rgba(248, 113, 113, 0.40);
+  --danger-fg: #fecaca;
+  --danger-strong: #f87171;
+  --hover: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
@@ -451,17 +488,21 @@ button {
 }
 
 .footer__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   color: var(--muted);
-  font-weight: 600;
   text-decoration: none;
   border-radius: 4px;
 }
 
 .footer__link:hover {
   color: var(--text);
+  text-decoration: underline;
+}
+
+.theme-toggle {
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  border-radius: 6px;
 }
 
 /* Buttons */

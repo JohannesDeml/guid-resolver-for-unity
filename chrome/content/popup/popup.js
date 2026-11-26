@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('optionsButton').addEventListener('click', openPopoutWindow);
   document.getElementById('firefoxPopout').addEventListener('click', openPopoutWindow);
   document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
+  setupThemeToggle();
 
   setupTabs();
   setupFileUpload();
@@ -100,6 +101,45 @@ document.addEventListener('DOMContentLoaded', async function () {
   updateFileList();
   loadPageStatus();
 });
+
+// Light/dark toggle in the footer. theme.js applies the saved choice on load;
+// without one, the system theme is used.
+function setupThemeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById('themeToggle');
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  const currentTheme = () => root.dataset.theme || (systemDark.matches ? 'dark' : 'light');
+
+  function render() {
+    const dark = currentTheme() === 'dark';
+    const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    // SVG elements have no hidden property, so set the attribute
+    button.querySelector('.theme-toggle__moon').toggleAttribute('hidden', dark);
+    button.querySelector('.theme-toggle__sun').toggleAttribute('hidden', !dark);
+  }
+
+  button.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try {
+      localStorage.setItem('ui.theme', next);
+    } catch (e) {
+      // Not saved; the choice lasts until the popup closes
+    }
+    render();
+  });
+  systemDark.addEventListener('change', render);
+  // Keep the popup and a popped-out window in sync
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'ui.theme' && (e.newValue === 'light' || e.newValue === 'dark')) {
+      root.dataset.theme = e.newValue;
+      render();
+    }
+  });
+  render();
+}
 
 // Mappings / Lookup tabs. The last opened tab is restored on the next open.
 function setupTabs() {
