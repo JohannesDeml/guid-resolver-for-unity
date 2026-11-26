@@ -22,6 +22,8 @@ This repo was created out of the need to have a better experience doing PR revie
 * Hover a label to see which mapping it comes from and copy the asset name or GUID
 * Look up any GUID, or its first characters, in the popup's Lookup tab
 * Very helpful for code reviews and projects which heavily rely on ScriptableObjects
+* Comes in light and dark theme
+* Search for guids right in the window
 
 ### Supported Browsers
 
@@ -35,6 +37,7 @@ This repo was created out of the need to have a better experience doing PR revie
 - [x] github (reads special `data-code-text` attributes)
 - [x] gitlab
 - [x] bitbucket server
+- [x] codeberg
 
 ## Setup
 
@@ -52,13 +55,15 @@ This repo was created out of the need to have a better experience doing PR revie
 2. Open the extension from your browser menu bar and click `browse` to choose the mapping file you generated in step 2 (or drop the file onto the drop area).
 3. Reload your current page - If you can't see any mapping applied you can use the `Re-scan` button in the extension popup.
 
-### Chrome Setup from Source
+### Chrome development setup
 
-1. Download the chrome extension folder from the [releases](https://github.com/JohannesDeml/guid-resolver-for-unity/releases/) and unpack the zip or clone the project
-2. In Chrome, go to the extensions and enable the developer mode
-3. Select Load unpacked and point to the chrome folder you downloaded
-4. Open the extension from your browser menu bar and click `browse` to choose the mapping file you generated in step 2 (or drop the file onto the drop area).
-5. Reload your current page - If you can't see any mapping applied you can use the `Re-scan` button in the extension popup.
+1. In Chrome, go to the extensions and enable the developer mode
+2. Select Load unpacked and point to the chrome folder you downloaded
+
+### Firefox development setup
+
+1. Go to about:debugging#/runtime/this-firefox
+2. Click on `Load Temporary Add-on...` and select The folder `chrome/content`
 
 ## Troubleshooting
 * Firefox closes the popup while its file picker is open. Clicking `browse` in the popup therefore opens the extension in its own small window, where you can pick the file (you can also use the pop-out button in the top right of the popup).
